@@ -1,6 +1,6 @@
 # 🛡️ Greenbone/OpenVAS + Zabbix + Portainer Docker Stack
 
-This project deploys a complete **Greenbone Community Edition (OpenVAS)** vulnerability scanner stack along with **Zabbix Monitoring** and **Portainer** for container management — all via Docker Compose.
+This project deploys a complete **Greenbone Community Edition (OpenVAS)** vulnerability scanner stack along with **Zabbix Monitoring** and **Portainer** for container management all via Docker Compose.
 
 ---
 
