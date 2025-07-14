@@ -1,0 +1,35 @@
+services:
+  zabbix-proxy:
+    image: zabbix/zabbix-proxy-sqlite3:7.0-alpine-latest
+    container_name: zabbix-proxy-7.0
+    restart: unless-stopped
+    ports:
+      - "8083:10051"
+    environment:
+      - ZBX_PROXYMODE=0
+      - ZBX_HOSTNAME=zabbix-proxy-7.0
+      - ZBX_SERVER_HOST=zabbix-server-7.0
+      - ZBX_SERVER_PORT=10051
+      - ZBX_CONFIGFREQUENCY=3600
+      - ZBX_DATASENDERFREQUENCY=1
+      - ZBX_STARTPOLLERS=5
+      - ZBX_IPMIPOLLERS=0
+      - ZBX_STARTPOLLERSUNREACHABLE=1
+      - ZBX_STARTTRAPPERS=5
+      - ZBX_STARTPINGERS=1
+      - ZBX_STARTDISCOVERERS=1
+      - ZBX_STARTHTTPPOLLERS=1
+      - ZBX_JAVAGATEWAY_ENABLE=false
+      - ZBX_VMWARECACHESIZE=8M
+    volumes:
+      - /home/docker/zabbix_proxy/data:/var/lib/zabbix
+      - /home/docker/zabbix_proxy/enc:/var/lib/zabbix/enc:ro
+      - /home/docker/zabbix_proxy/keys:/var/lib/zabbix/ssh_keys:ro
+      - /home/docker/zabbix_proxy/mibs:/var/lib/zabbix/mibs:ro
+      - /home/docker/zabbix_proxy/externalscripts:/usr/lib/zabbix/externalscripts:ro
+    networks:
+      - zabbix-network
+
+networks:
+  zabbix-network:
+    driver: bridge

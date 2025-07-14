@@ -1,0 +1,241 @@
+services:
+  vulnerability-tests:
+    image: registry.community.greenbone.net/community/vulnerability-tests
+    container_name: vulnerability-tests
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - /home/docker/ovas001/vt_data:/mnt
+    networks:
+      - openvas-network
+
+  notus-data:
+    image: registry.community.greenbone.net/community/notus-data
+    container_name: notus-data
+    volumes:
+      - /home/docker/ovas001/notus_data:/mnt
+    networks:
+      - openvas-network
+
+  scap-data:
+    image: registry.community.greenbone.net/community/scap-data
+    container_name: scap-data
+    volumes:
+      - /home/docker/ovas001/scap_data:/mnt
+    networks:
+      - openvas-network
+
+  cert-bund-data:
+    image: registry.community.greenbone.net/community/cert-bund-data
+    container_name: cert-bund-data
+    volumes:
+      - /home/docker/ovas001/cert_data:/mnt
+    networks:
+      - openvas-network
+
+  dfn-cert-data:
+    image: registry.community.greenbone.net/community/dfn-cert-data
+    container_name: dfn-cert-data
+    volumes:
+      - /home/docker/ovas001/cert_data:/mnt
+    depends_on:
+      - cert-bund-data
+    networks:
+      - openvas-network
+
+  data-objects:
+    image: registry.community.greenbone.net/community/data-objects
+    container_name: data-objects
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - /home/docker/ovas001/data_objects:/mnt
+    networks:
+      - openvas-network
+
+  report-formats:
+    image: registry.community.greenbone.net/community/report-formats
+    container_name: report-formats
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - /home/docker/ovas001/data_objects:/mnt
+    depends_on:
+      - data-objects
+    networks:
+      - openvas-network
+
+  gpg-data:
+    image: registry.community.greenbone.net/community/gpg-data
+    container_name: gpg-data
+    volumes:
+      - /home/docker/ovas001/gpg_data:/mnt
+    networks:
+      - openvas-network
+
+  redis-server:
+    image: registry.community.greenbone.net/community/redis-server
+    container_name: redis-server
+    restart: on-failure
+    volumes:
+      - /home/docker/ovas001/redis_socket:/run/redis/
+    networks:
+      - openvas-network
+
+  pg-gvm:
+    image: registry.community.greenbone.net/community/pg-gvm:stable
+    container_name: pg-gvm
+    restart: on-failure
+    volumes:
+      - /home/docker/ovas001/psql_data:/var/lib/postgresql
+      - /home/docker/ovas001/psql_socket:/var/run/postgresql
+    networks:
+      - openvas-network
+
+  gvmd:
+    image: registry.community.greenbone.net/community/gvmd:stable
+    container_name: gvmd
+    restart: on-failure
+    volumes:
+      - /home/docker/ovas001/gvmd_data:/var/lib/gvm
+      - /home/docker/ovas001/scap_data:/var/lib/gvm/scap-data/
+      - /home/docker/ovas001/cert_data:/var/lib/gvm/cert-data
+      - /home/docker/ovas001/data_objects:/var/lib/gvm/data-objects/gvmd
+      - /home/docker/ovas001/vt_data:/var/lib/openvas/plugins
+      - /home/docker/ovas001/psql_data:/var/lib/postgresql
+      - /home/docker/ovas001/gvmd_socket:/run/gvmd
+      - /home/docker/ovas001/ospd_openvas_socket:/run/ospd
+      - /home/docker/ovas001/psql_socket:/var/run/postgresql
+    depends_on:
+      - pg-gvm
+      - scap-data
+      - cert-bund-data
+      - dfn-cert-data
+      - data-objects
+      - report-formats
+    networks:
+      - openvas-network
+
+  gsa:
+    image: registry.community.greenbone.net/community/gsa:stable
+    container_name: gsa
+    restart: on-failure
+    ports:
+      - "8080:80"
+    volumes:
+      - /home/docker/ovas001/gvmd_socket:/run/gvmd
+    depends_on:
+      - gvmd
+    networks:
+      - openvas-network
+
+  configure-openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    container_name: configure-openvas
+    volumes:
+      - /home/docker/ovas001/openvas_data:/mnt
+      - /home/docker/ovas001/openvas_log_data:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        printf "table_driven_lsc = yes\nopenvasd_server = http://openvasd:80\n" > /mnt/openvas.conf
+        sed "s/127/128/" /etc/openvas/openvas_log.conf | sed 's/gvm/openvas/' > /mnt/openvas_log.conf
+        chmod 644 /mnt/openvas.conf
+        chmod 644 /mnt/openvas_log.conf
+        touch /var/log/openvas/openvas.log
+        chmod 666 /var/log/openvas/openvas.log
+    networks:
+      - openvas-network
+
+  openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    container_name: openvas
+    restart: on-failure
+    volumes:
+      - /home/docker/ovas001/openvas_data:/etc/openvas
+      - /home/docker/ovas001/openvas_log_data:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cat /etc/openvas/openvas.conf
+        tail -f /var/log/openvas/openvas.log
+    depends_on:
+      - configure-openvas
+    networks:
+      - openvas-network
+
+  openvasd:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    container_name: openvasd
+    restart: on-failure
+    environment:
+      OPENVASD_MODE: service_notus
+      GNUPGHOME: /etc/openvas/gnupg
+      LISTENING: 0.0.0.0:80
+    volumes:
+      - /home/docker/ovas001/openvas_data:/etc/openvas
+      - /home/docker/ovas001/openvas_log_data:/var/log/openvas
+      - /home/docker/ovas001/gpg_data:/etc/openvas/gnupg
+      - /home/docker/ovas001/notus_data:/var/lib/notus
+    depends_on:
+      - vulnerability-tests
+      - configure-openvas
+      - gpg-data
+    networks:
+      - openvas-network
+
+  ospd-openvas:
+    image: registry.community.greenbone.net/community/ospd-openvas:stable
+    container_name: ospd-openvas
+    restart: on-failure
+    hostname: ospd-openvas.local
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    command:
+      [
+        "ospd-openvas",
+        "-f",
+        "--config",
+        "/etc/gvm/ospd-openvas.conf",
+        "--notus-feed-dir",
+        "/var/lib/notus/advisories",
+        "-m",
+        "666",
+      ]
+    volumes:
+      - /home/docker/ovas001/gpg_data:/etc/openvas/gnupg
+      - /home/docker/ovas001/vt_data:/var/lib/openvas/plugins
+      - /home/docker/ovas001/notus_data:/var/lib/notus
+      - /home/docker/ovas001/ospd_openvas_socket:/run/ospd
+      - /home/docker/ovas001/redis_socket:/run/redis/
+      - /home/docker/ovas001/openvas_data:/etc/openvas/
+      - /home/docker/ovas001/openvas_log_data:/var/log/openvas
+    depends_on:
+      - redis-server
+      - gpg-data
+      - vulnerability-tests
+      - configure-openvas
+    networks:
+      - openvas-network
+
+  gvm-tools:
+    image: registry.community.greenbone.net/community/gvm-tools
+    container_name: gvm-tools
+    volumes:
+      - /home/docker/ovas001/gvmd_socket:/run/gvmd
+      - /home/docker/ovas001/ospd_openvas_socket:/run/ospd
+    depends_on:
+      - gvmd
+      - ospd-openvas
+    networks:
+      - openvas-network
+
+networks:
+  openvas-network:
+    driver: bridge

@@ -1,0 +1,69 @@
+services:
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:7.0-alpine-latest
+    container_name: zabbix-server-7.0
+    restart: unless-stopped
+    ports:
+      - "10052:10051"
+    environment:
+      - DB_SERVER_HOST=zabbix-db
+      - POSTGRES_DB=zabbix
+      - POSTGRES_USER=zabbix
+      - POSTGRES_PASSWORD=zabbix_password
+      - ZBX_HISTORYSTORAGETYPES=log,text
+      - ZBX_DEBUGLEVEL=1
+      - ZBX_HOUSEKEEPINGFREQUENCY=1
+      - ZBX_MAXHOUSEKEEPERDELETION=5000
+      - ZBX_PROXYCONFIGFREQUENCY=3600
+    volumes:
+      - /home/docker/zabbix_server_7.0/alertscripts:/usr/lib/zabbix/alertscripts:ro
+      - /home/docker/zabbix_server_7.0/externalscripts:/usr/lib/zabbix/externalscripts:ro
+      - /home/docker/zabbix_server_7.0/dbscripts:/var/lib/zabbix/dbscripts:ro
+      - /home/docker/zabbix_server_7.0/export:/var/lib/zabbix/export:rw
+      - /home/docker/zabbix_server_7.0/modules:/var/lib/zabbix/modules:ro
+      - /home/docker/zabbix_server_7.0/enc:/var/lib/zabbix/enc:ro
+      - /home/docker/zabbix_server_7.0/ssh_keys:/var/lib/zabbix/ssh_keys:ro
+      - /home/docker/zabbix_server_7.0/mibs:/var/lib/zabbix/mibs:ro
+    depends_on:
+      - zabbix-db
+    networks:
+      - zabbix-network
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:7.0-alpine-latest
+    container_name: zabbix-web-7.0
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    environment:
+      - ZBX_SERVER_HOST=zabbix-server-7.0
+      - DB_SERVER_HOST=zabbix-db
+      - POSTGRES_DB=zabbix
+      - POSTGRES_USER=zabbix
+      - POSTGRES_PASSWORD=zabbix_password
+      - PHP_TZ=UTC
+    volumes:
+      - /home/docker/zabbix_server_7.0/web:/etc/ssl/nginx:ro
+      - /home/docker/zabbix_server_7.0/modules:/usr/share/zabbix/modules:ro
+    depends_on:
+      - zabbix-server
+      - zabbix-db
+    networks:
+      - zabbix-network
+
+  zabbix-db:
+    image: postgres:16-alpine
+    container_name: zabbix-db-7.0
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=zabbix
+      - POSTGRES_USER=zabbix
+      - POSTGRES_PASSWORD=zabbix_password
+    volumes:
+      - /home/docker/zabbix_server_7.0/postgres-data:/var/lib/postgresql/data:rw
+    networks:
+      - zabbix-network
+
+networks:
+  zabbix-network:
+    driver: bridge
