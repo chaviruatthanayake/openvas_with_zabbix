@@ -1,0 +1,375 @@
+services:
+  vulnerability-tests:
+    image: registry.community.greenbone.net/community/vulnerability-tests
+    container_name: vulnerability-tests
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - /home/docker/ovas001/vt_data:/mnt
+    networks:
+      - openvas-network
+
+  notus-data:
+    image: registry.community.greenbone.net/community/notus-data
+    container_name: notus-data
+    volumes:
+      - /home/docker/ovas001/notus_data:/mnt
+    networks:
+      - openvas-network
+
+  scap-data:
+    image: registry.community.greenbone.net/community/scap-data
+    container_name: scap-data
+    volumes:
+      - /home/docker/ovas001/scap_data:/mnt
+    networks:
+      - openvas-network
+
+  cert-bund-data:
+    image: registry.community.greenbone.net/community/cert-bund-data
+    container_name: cert-bund-data
+    volumes:
+      - /home/docker/ovas001/cert_data:/mnt
+    networks:
+      - openvas-network
+
+  dfn-cert-data:
+    image: registry.community.greenbone.net/community/dfn-cert-data
+    container_name: dfn-cert-data
+    volumes:
+      - /home/docker/ovas001/cert_data:/mnt
+    depends_on:
+      - cert-bund-data
+    networks:
+      - openvas-network
+
+  data-objects:
+    image: registry.community.greenbone.net/community/data-objects
+    container_name: data-objects
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - /home/docker/ovas001/data_objects:/mnt
+    networks:
+      - openvas-network
+
+  report-formats:
+    image: registry.community.greenbone.net/community/report-formats
+    container_name: report-formats
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - /home/docker/ovas001/data_objects:/mnt
+    depends_on:
+      - data-objects
+    networks:
+      - openvas-network
+
+  gpg-data:
+    image: registry.community.greenbone.net/community/gpg-data
+    container_name: gpg-data
+    volumes:
+      - /home/docker/ovas001/gpg_data:/mnt
+    networks:
+      - openvas-network
+
+  redis-server:
+    image: registry.community.greenbone.net/community/redis-server
+    container_name: redis-server
+    user: "999:999"
+    command: >
+      redis-server --port 6379
+                   --bind 0.0.0.0
+                   --unixsocket /run/redis/redis.sock
+                   --unixsocketperm 770
+                   --protected-mode no
+                   --databases 128
+    restart: on-failure
+    volumes:
+      - /home/docker/ovas001/redis_socket:/run/redis/
+    networks:
+      - openvas-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  pg-gvm:
+    image: registry.community.greenbone.net/community/pg-gvm:stable
+    container_name: pg-gvm
+    restart: on-failure
+    volumes:
+      - /home/docker/ovas001/psql_data:/var/lib/postgresql
+      - /home/docker/ovas001/psql_socket:/var/run/postgresql
+    networks:
+      - openvas-network
+
+  gvmd:
+    image: registry.community.greenbone.net/community/gvmd:stable
+    container_name: gvmd
+    restart: on-failure
+    volumes:
+      - /home/docker/ovas001/gvmd_data:/var/lib/gvm
+      - /home/docker/ovas001/scap_data:/var/lib/gvm/scap-data/
+      - /home/docker/ovas001/cert_data:/var/lib/gvm/cert-data
+      - /home/docker/ovas001/data_objects:/var/lib/gvm/data-objects/gvmd
+      - /home/docker/ovas001/vt_data:/var/lib/openvas/plugins
+      - /home/docker/ovas001/psql_data:/var/lib/postgresql
+      - /home/docker/ovas001/gvmd_socket:/run/gvmd
+      - /home/docker/ovas001/ospd_openvas_socket:/run/ospd
+      - /home/docker/ovas001/psql_socket:/var/run/postgresql
+    depends_on:
+      - pg-gvm
+      - scap-data
+      - cert-bund-data
+      - dfn-cert-data
+      - data-objects
+      - report-formats
+    networks:
+      - openvas-network
+
+  gsa:
+    image: registry.community.greenbone.net/community/gsa:stable
+    container_name: gsa
+    restart: on-failure
+    ports:
+      - "8080:80"
+    volumes:
+      - /home/docker/ovas001/gvmd_socket:/run/gvmd
+    depends_on:
+      - gvmd
+    networks:
+      - openvas-network
+
+  configure-openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    container_name: configure-openvas
+    volumes:
+      - /home/docker/ovas001/openvas_data:/mnt
+      - /home/docker/ovas001/openvas_log_data:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        printf "table_driven_lsc = yes\nopenvasd_server = http://openvasd:80\n" > /mnt/openvas.conf
+        sed "s/127/128/" /etc/openvas/openvas_log.conf | sed 's/gvm/openvas/' > /mnt/openvas_log.conf
+        chmod 644 /mnt/openvas.conf
+        chmod 644 /mnt/openvas_log.conf
+        touch /var/log/openvas/openvas.log
+        chmod 666 /var/log/openvas/openvas.log
+    networks:
+      - openvas-network
+
+  openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    container_name: openvas
+    restart: on-failure
+    volumes:
+      - /home/docker/ovas001/openvas_data:/etc/openvas
+      - /home/docker/ovas001/openvas_log_data:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cat /etc/openvas/openvas.conf
+        tail -f /var/log/openvas/openvas.log
+    depends_on:
+      - configure-openvas
+    networks:
+      - openvas-network
+
+  openvasd:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    container_name: openvasd
+    restart: on-failure
+    environment:
+      OPENVASD_MODE: service_notus
+      GNUPGHOME: /etc/openvas/gnupg
+      LISTENING: 0.0.0.0:80
+    volumes:
+      - /home/docker/ovas001/openvas_data:/etc/openvas
+      - /home/docker/ovas001/openvas_log_data:/var/log/openvas
+      - /home/docker/ovas001/gpg_data:/etc/openvas/gnupg
+      - /home/docker/ovas001/notus_data:/var/lib/notus
+    depends_on:
+      - vulnerability-tests
+      - configure-openvas
+      - gpg-data
+    networks:
+      - openvas-network
+
+  ospd-openvas:
+    image: registry.community.greenbone.net/community/ospd-openvas:stable
+    container_name: ospd-openvas
+    restart: on-failure
+    hostname: ospd-openvas.local
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    command:
+      [
+        "ospd-openvas",
+        "-f",
+        "--config",
+        "/etc/gvm/ospd-openvas.conf",
+        "--notus-feed-dir",
+        "/var/lib/notus/advisories",
+        "-m",
+        "666",
+      ]
+    environment:
+      - REDIS_HOST=redis-server
+      - REDIS_PORT=6379
+    volumes:
+      - /home/docker/ovas001/gpg_data:/etc/openvas/gnupg
+      - /home/docker/ovas001/vt_data:/var/lib/openvas/plugins
+      - /home/docker/ovas001/notus_data:/var/lib/notus
+      - /home/docker/ovas001/ospd_openvas_socket:/run/ospd
+      - /home/docker/ovas001/redis_socket:/run/redis/
+      - /home/docker/ovas001/openvas_data:/etc/openvas/
+      - /home/docker/ovas001/openvas_log_data:/var/log/openvas
+    depends_on:
+      - redis-server
+      - gpg-data
+      - vulnerability-tests
+      - configure-openvas
+    networks:
+      - openvas-network
+
+  gvm-tools:
+    image: registry.community.greenbone.net/community/gvm-tools
+    container_name: gvm-tools
+    volumes:
+      - /home/docker/ovas001/gvmd_socket:/run/gvmd
+      - /home/docker/ovas001/ospd_openvas_socket:/run/ospd
+    depends_on:
+      - gvmd
+      - ospd-openvas
+    networks:
+      - openvas-network
+
+  # Zabbix Server 7.4 Setup
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:7.4-alpine-latest
+    container_name: zabbix-server
+    restart: unless-stopped
+    ports:
+      - "10051:10051"
+    environment:
+      - DB_SERVER_HOST=zabbix-db
+      - POSTGRES_DB=zabbix
+      - POSTGRES_USER=zabbix
+      - POSTGRES_PASSWORD=zabbix_password
+      - ZBX_HISTORYSTORAGETYPES=log,text
+      - ZBX_DEBUGLEVEL=1
+      - ZBX_HOUSEKEEPINGFREQUENCY=1
+      - ZBX_MAXHOUSEKEEPERDELETION=5000
+      - ZBX_PROXYCONFIGFREQUENCY=3600
+    volumes:
+      - /home/docker/zabbix_server/alertscripts:/usr/lib/zabbix/alertscripts:ro
+      - /home/docker/zabbix_server/externalscripts:/usr/lib/zabbix/externalscripts:ro
+      - /home/docker/zabbix_server/dbscripts:/var/lib/zabbix/dbscripts:ro
+      - /home/docker/zabbix_server/export:/var/lib/zabbix/export:rw
+      - /home/docker/zabbix_server/modules:/var/lib/zabbix/modules:ro
+      - /home/docker/zabbix_server/enc:/var/lib/zabbix/enc:ro
+      - /home/docker/zabbix_server/ssh_keys:/var/lib/zabbix/ssh_keys:ro
+      - /home/docker/zabbix_server/mibs:/var/lib/zabbix/mibs:ro
+    depends_on:
+      - zabbix-db
+    networks:
+      - zabbix-network
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:7.4-alpine-latest
+    container_name: zabbix-web
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      - ZBX_SERVER_HOST=zabbix-server
+      - DB_SERVER_HOST=zabbix-db
+      - POSTGRES_DB=zabbix
+      - POSTGRES_USER=zabbix
+      - POSTGRES_PASSWORD=zabbix_password
+      - PHP_TZ=UTC
+    volumes:
+      - /home/docker/zabbix_server/web:/etc/ssl/nginx:ro
+      - /home/docker/zabbix_server/modules:/usr/share/zabbix/modules:ro
+    depends_on:
+      - zabbix-server
+      - zabbix-db
+    networks:
+      - zabbix-network
+
+  zabbix-db:
+    image: postgres:16-alpine
+    container_name: zabbix-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=zabbix
+      - POSTGRES_USER=zabbix
+      - POSTGRES_PASSWORD=zabbix_password
+    volumes:
+      - /home/docker/zabbix_server/postgres-data:/var/lib/postgresql/data:rw
+    networks:
+      - zabbix-network
+
+  # Zabbix Proxy 7.0 Setup
+  zabbix-proxy:
+    image: zabbix/zabbix-proxy-sqlite3:7.0-alpine-latest
+    container_name: zabbix-proxy
+    restart: unless-stopped
+    ports:
+      - "8082:10051"
+    environment:
+      - ZBX_PROXYMODE=0
+      - ZBX_HOSTNAME=zabbix-proxy
+      - ZBX_SERVER_HOST=zabbix-server
+      - ZBX_SERVER_PORT=10051
+      - ZBX_CONFIGFREQUENCY=3600
+      - ZBX_DATASENDERFREQUENCY=1
+      - ZBX_STARTPOLLERS=5
+      - ZBX_IPMIPOLLERS=0
+      - ZBX_STARTPOLLERSUNREACHABLE=1
+      - ZBX_STARTTRAPPERS=5
+      - ZBX_STARTPINGERS=1
+      - ZBX_STARTDISCOVERERS=1
+      - ZBX_STARTHTTPPOLLERS=1
+      - ZBX_JAVAGATEWAY_ENABLE=false
+      - ZBX_VMWARECACHESIZE=8M
+    volumes:
+      - /home/docker/zabbix_proxy/data:/var/lib/zabbix
+      - /home/docker/zabbix_proxy/enc:/var/lib/zabbix/enc:ro
+      - /home/docker/zabbix_proxy/keys:/var/lib/zabbix/ssh_keys:ro
+      - /home/docker/zabbix_proxy/mibs:/var/lib/zabbix/mibs:ro
+      - /home/docker/zabbix_proxy/externalscripts:/usr/lib/zabbix/externalscripts:ro
+      - /home/docker/zabbix_proxy/sqlite:/var/lib/zabbix/db_data
+    depends_on:
+      - zabbix-server
+    networks:
+      - zabbix-network
+
+  # Portainer Setup
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /home/docker/portainer/data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - portainer-network
+
+networks:
+  openvas-network:
+    driver: bridge
+  zabbix-network:
+    driver: bridge
+  portainer-network:
+    driver: bridge
