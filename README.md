@@ -37,9 +37,9 @@ Before deploying the stacks, ensure the following are in place:
 ## Deployment Instructions
 
 ### Step 1: Prepare the Environment
-1. Run the setup script in the Host VM<br/>
-     ` chmod +x setup_env.sh `<br/>
-     ` ./setup_env.sh `
+1. Run each setup script in the Host VM<br/>
+     ` chmod +x setup_****.sh `<br/>
+     ` ./setup_***.sh `
 
 ### Step 2: Create a redis.conf file (Sample is below)
 ` mkdir -p /home/docker/ovas001/redis_conf `<br/>
