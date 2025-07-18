@@ -15,6 +15,7 @@ services:
       - ZBX_HOUSEKEEPINGFREQUENCY=1
       - ZBX_MAXHOUSEKEEPERDELETION=5000
       - ZBX_PROXYCONFIGFREQUENCY=3600
+      - ZBX_NODEADDRESS=zabbix-server:10051
     volumes:
       - /home/docker/zabbix_server_7.0/alertscripts:/usr/lib/zabbix/alertscripts:ro
       - /home/docker/zabbix_server_7.0/externalscripts:/usr/lib/zabbix/externalscripts:ro
